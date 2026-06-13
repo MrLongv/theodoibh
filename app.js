@@ -17,7 +17,7 @@
      CONFIG
   ========================================================= */
 
-  const API_BASE = "https://YOUR-WORKER-URL.workers.dev";
+  const API_BASE = "https://ban-hang-tmdt-api.hoalangiongxoai.workers.dev";
 
   const LS = {
     session: "tmdt_real_session_v1",
