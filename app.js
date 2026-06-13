@@ -1763,34 +1763,110 @@
     }
 
     const sheet = workbook.Sheets[sheetName];
-    const rawRows = XLSX.utils.sheet_to_json(sheet, {
+
+    /*
+      File mẫu có 3 dòng tiêu đề/hướng dẫn phía trên.
+      Header thật nằm ở dòng 4:
+      sku * | name * | category | unit | min_qty | status | note
+
+      Vì vậy không dùng sheet_to_json mặc định nữa.
+      Ta đọc dạng mảng, tự dò dòng header có cột SKU và NAME.
+    */
+    const rows = XLSX.utils.sheet_to_json(sheet, {
+      header: 1,
       defval: "",
       raw: false,
+      blankrows: false,
     });
+
+    const isSkuHeader = (v) => {
+      const h = normalizeHeaderName(v);
+      return [
+        "sku",
+        "sku_",
+        "ma_sp",
+        "ma_san_pham",
+        "ma_hang",
+        "msp",
+        "code",
+        "product_code",
+      ].includes(h);
+    };
+
+    const isNameHeader = (v) => {
+      const h = normalizeHeaderName(v);
+      return [
+        "name",
+        "name_",
+        "ten",
+        "ten_sp",
+        "ten_san_pham",
+        "ten_hang",
+        "product_name",
+      ].includes(h);
+    };
+
+    let headerRowIndex = -1;
+
+    for (let i = 0; i < rows.length; i++) {
+      const line = rows[i] || [];
+      const hasSku = line.some(isSkuHeader);
+      const hasName = line.some(isNameHeader);
+
+      if (hasSku && hasName) {
+        headerRowIndex = i;
+        break;
+      }
+    }
+
+    if (headerRowIndex < 0) {
+      throw new Error("Không tìm thấy dòng tiêu đề sản phẩm. File cần có cột sku * và name *.");
+    }
+
+    const headers = (rows[headerRowIndex] || []).map(normalizeHeaderName);
+
+    function valueAt(line, names) {
+      const wanted = names.map(normalizeHeaderName);
+
+      for (let i = 0; i < headers.length; i++) {
+        if (wanted.includes(headers[i])) {
+          return line[i];
+        }
+      }
+
+      return "";
+    }
 
     const products = [];
 
-    rawRows.forEach((row, index) => {
-      const code = sku(readAnyField(row, [
+    for (let i = headerRowIndex + 1; i < rows.length; i++) {
+      const line = rows[i] || [];
+
+      const code = sku(valueAt(line, [
         "sku",
+        "sku *",
         "ma_sp",
-        "ma_san_pham",
         "mã sp",
+        "ma_san_pham",
         "mã sản phẩm",
-        "ma hang",
+        "ma_hang",
         "mã hàng",
+        "code",
       ]));
 
-      const name = String(readAnyField(row, [
+      const name = String(valueAt(line, [
         "name",
+        "name *",
         "ten",
+        "ten_sp",
         "ten_san_pham",
         "tên sản phẩm",
-        "ten hang",
+        "ten_hang",
         "tên hàng",
+        "product_name",
       ]) || "").trim();
 
-      const category = String(readAnyField(row, [
+      const category = String(valueAt(line, [
         "category",
         "nhom",
         "nhom_hang",
@@ -1799,16 +1875,16 @@
         "loại",
       ]) || "").trim();
 
-      const unit = String(readAnyField(row, [
+      const unit = String(valueAt(line, [
         "unit",
         "dvt",
         "don_vi",
         "đơn vị",
-        "don vi tinh",
+        "don_vi_tinh",
         "đơn vị tính",
       ]) || "Cái").trim() || "Cái";
 
-      const minQty = Math.max(0, Math.round(num(readAnyField(row, [
+      const minQty = Math.max(0, Math.round(num(valueAt(line, [
         "min_qty",
         "canh_bao",
         "ton_canh_bao",
@@ -1817,29 +1893,50 @@
         "mức cảnh báo",
       ])) || 0));
 
-      const statusRaw = String(readAnyField(row, [
+      const statusRaw = String(valueAt(line, [
         "status",
         "trang_thai",
         "trạng thái",
       ]) || "ACTIVE").trim();
 
-      const note = String(readAnyField(row, [
+      const note = String(valueAt(line, [
         "note",
         "ghi_chu",
         "ghi chú",
       ]) || "").trim();
 
-      if (!code && !name) return;
+      if (!code && !name) continue;
 
-      if (!code || !name) {
-        throw new Error(`Dòng ${index + 2}: thiếu mã sản phẩm hoặc tên sản phẩm.`);
+      /*
+        Tránh nhập nhầm 3 dòng ví dụ trong file mẫu nếu người dùng chưa xóa.
+      */
+      const isTemplateExample =
+        note.toLowerCase().includes("ví dụ") ||
+        note.toLowerCase().includes("vi du");
+
+      if (isTemplateExample && [
+        "AO-0001-DEN-M",
+        "PK-0002",
+        "GD-0011",
+      ].includes(code)) {
+        continue;
       }
 
-      let status = statusRaw.toUpperCase();
+      if (!code || !name) {
+        throw new Error(`Dòng ${i + 1}: thiếu mã sản phẩm hoặc tên sản phẩm.`);
+      }
 
-      if (["ĐANG BÁN", "DANG BAN", "ACTIVE", "A"].includes(status)) status = "ACTIVE";
-      else if (["TẠM NGƯNG", "TAM NGUNG", "PAUSED", "P"].includes(status)) status = "PAUSED";
-      else if (["ẨN", "AN", "HIDDEN", "H"].includes(status)) status = "HIDDEN";
+      let status = statusRaw
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/đ/g, "d")
+        .replace(/Đ/g, "D")
+        .toUpperCase()
+        .trim();
+
+      if (["DANG BAN", "ACTIVE", "A"].includes(status)) status = "ACTIVE";
+      else if (["TAM NGUNG", "PAUSED", "P"].includes(status)) status = "PAUSED";
+      else if (["AN", "HIDDEN", "H"].includes(status)) status = "HIDDEN";
       else status = "ACTIVE";
 
       products.push({
@@ -1851,10 +1948,11 @@
         status,
         note,
       });
-    });
+    }
 
     return products;
   }
+
 
   async function importProductsExcel() {
     const file = await pickExcelFile();
