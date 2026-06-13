@@ -2371,6 +2371,355 @@
   }
 
 
+
+  /* =========================================================
+     IMPORT EXCEL - SALES / BÁN HÀNG
+     Đọc sheet 03_BanHang trong file Excel mẫu.
+     Mỗi order_code sẽ tạo 1 đơn bán riêng trong D1.
+  ========================================================= */
+
+  function generateSaleCodeFromExcel(date, index) {
+    const cleanDate = normalizeExcelDate(date).replaceAll("-", "");
+    return `BH-${cleanDate}-${String(index).padStart(3, "0")}`;
+  }
+
+  async function readSalesGroupsFromExcel(file) {
+    const XLSX = await loadXlsxLibrary();
+    const buffer = await file.arrayBuffer();
+    const workbook = XLSX.read(buffer, {
+      type: "array",
+      cellDates: true,
+    });
+
+    const sheetName =
+      workbook.SheetNames.find((name) => normalizeHeaderName(name) === "03_banhang") ||
+      workbook.SheetNames.find((name) => normalizeHeaderName(name).includes("banhang")) ||
+      workbook.SheetNames.find((name) => normalizeHeaderName(name).includes("ban_hang")) ||
+      workbook.SheetNames[2] ||
+      workbook.SheetNames[0];
+
+    if (!sheetName) {
+      throw new Error("File Excel không có sheet bán hàng.");
+    }
+
+    const sheet = workbook.Sheets[sheetName];
+    const matrix = XLSX.utils.sheet_to_json(sheet, {
+      header: 1,
+      defval: "",
+      raw: false,
+    });
+
+    const headerIndex = findHeaderRowIndex(matrix, [
+      ["order_code", "ma_don", "mã đơn", "code"],
+      ["date", "ngay", "ngày", "ngay_ban", "ngày bán"],
+      ["sku", "ma_sp", "mã sp", "ma_san_pham", "mã sản phẩm"],
+      ["qty", "sl", "so_luong", "số lượng"],
+      ["unit_price", "gia_ban", "giá bán", "price"],
+    ]);
+
+    if (headerIndex < 0) {
+      throw new Error("Không tìm thấy dòng tiêu đề bán hàng. Cần có cột: order_code, date, sku, qty, unit_price.");
+    }
+
+    const rawRows = matrixToObjects(matrix, headerIndex);
+    const validRows = [];
+
+    rawRows.forEach((row, index) => {
+      const orderCodeRaw = String(readAnyField(row, [
+        "order_code",
+        "ma_don",
+        "mã đơn",
+        "ma don",
+        "code",
+        "don_hang",
+        "đơn hàng",
+      ]) || "").trim();
+
+      const dateRaw = readAnyField(row, [
+        "date",
+        "ngay",
+        "ngày",
+        "ngay_ban",
+        "ngày bán",
+      ]);
+
+      const platform = String(readAnyField(row, [
+        "platform",
+        "san",
+        "sàn",
+        "san_ban",
+        "sàn bán",
+        "kenh_ban",
+        "kênh bán",
+      ]) || "Shopee").trim() || "Shopee";
+
+      const codeSku = sku(readAnyField(row, [
+        "sku",
+        "ma_sp",
+        "mã sp",
+        "ma_san_pham",
+        "mã sản phẩm",
+        "ma_hang",
+        "mã hàng",
+      ]));
+
+      const qty = Math.round(num(readAnyField(row, [
+        "qty",
+        "sl",
+        "so_luong",
+        "số lượng",
+        "so_luong_ban",
+        "số lượng bán",
+      ])));
+
+      const unitPrice = Math.round(num(readAnyField(row, [
+        "unit_price",
+        "gia_ban",
+        "giá bán",
+        "price",
+        "don_gia_ban",
+        "đơn giá bán",
+      ])));
+
+      const feeRaw = readAnyField(row, [
+        "platform_fee",
+        "phi_san",
+        "phí sàn",
+        "fee",
+      ]);
+
+      const discountRaw = readAnyField(row, [
+        "discount",
+        "giam_gia",
+        "giảm giá",
+        "voucher",
+      ]);
+
+      const otherFeeRaw = readAnyField(row, [
+        "other_fee",
+        "phi_khac",
+        "phí khác",
+      ]);
+
+      const netRaw = readAnyField(row, [
+        "net_amount",
+        "thuc_nhan",
+        "thực nhận",
+        "tien_thuc_nhan",
+        "tiền thực nhận",
+      ]);
+
+      const note = String(readAnyField(row, [
+        "note",
+        "ghi_chu",
+        "ghi chú",
+      ]) || "").trim();
+
+      if (
+        !orderCodeRaw &&
+        !dateRaw &&
+        !platform &&
+        !codeSku &&
+        !qty &&
+        !unitPrice &&
+        !feeRaw &&
+        !discountRaw &&
+        !otherFeeRaw &&
+        !netRaw &&
+        !note
+      ) {
+        return;
+      }
+
+      if (!codeSku) {
+        throw new Error(`Dòng ${headerIndex + index + 2}: thiếu mã sản phẩm.`);
+      }
+
+      if (qty <= 0) {
+        throw new Error(`Dòng ${headerIndex + index + 2}: số lượng bán của ${codeSku} phải lớn hơn 0.`);
+      }
+
+      if (unitPrice < 0) {
+        throw new Error(`Dòng ${headerIndex + index + 2}: giá bán của ${codeSku} không hợp lệ.`);
+      }
+
+      const date = normalizeExcelDate(dateRaw);
+      const orderCode = orderCodeRaw || generateSaleCodeFromExcel(date, validRows.length + 1);
+
+      validRows.push({
+        order_code: orderCode,
+        date,
+        platform,
+        sku: codeSku,
+        qty,
+        unit_price: unitPrice,
+        platform_fee: Math.round(num(feeRaw)),
+        discount: Math.round(num(discountRaw)),
+        other_fee: Math.round(num(otherFeeRaw)),
+        net_amount: String(netRaw ?? "").trim() === "" ? "" : Math.round(num(netRaw)),
+        note,
+        has_platform_fee: String(feeRaw ?? "").trim() !== "",
+        has_discount: String(discountRaw ?? "").trim() !== "",
+        has_other_fee: String(otherFeeRaw ?? "").trim() !== "",
+        has_net_amount: String(netRaw ?? "").trim() !== "",
+      });
+    });
+
+    if (!validRows.length) {
+      throw new Error("Sheet bán hàng không có dòng đơn bán hợp lệ.");
+    }
+
+    const groupMap = new Map();
+
+    validRows.forEach((row) => {
+      const key = row.order_code || generateSaleCodeFromExcel(row.date, groupMap.size + 1);
+
+      if (!groupMap.has(key)) {
+        groupMap.set(key, {
+          order_code: key,
+          date: row.date || today(),
+          platform: row.platform || "Khác",
+          note: row.note || "",
+          platform_fee: 0,
+          discount: 0,
+          other_fee: 0,
+          net_amount: "",
+          has_net_amount: false,
+          lines: [],
+        });
+      }
+
+      const group = groupMap.get(key);
+
+      if (!group.platform && row.platform) group.platform = row.platform;
+      if (!group.note && row.note) group.note = row.note;
+
+      // Các phí này là phí theo đơn. Nếu có nhiều dòng cùng mã đơn,
+      // bạn chỉ cần nhập phí ở dòng đầu tiên, các dòng dưới để trống.
+      if (row.has_platform_fee) group.platform_fee = row.platform_fee;
+      if (row.has_discount) group.discount = row.discount;
+      if (row.has_other_fee) group.other_fee = row.other_fee;
+
+      if (row.has_net_amount) {
+        group.net_amount = row.net_amount;
+        group.has_net_amount = true;
+      }
+
+      group.lines.push({
+        sku: row.sku,
+        qty: row.qty,
+        unit_price: row.unit_price,
+      });
+    });
+
+    return Array.from(groupMap.values()).map((group) => {
+      const payload = {
+        order_code: group.order_code,
+        date: group.date,
+        platform: group.platform || "Khác",
+        note: group.note || "",
+        platform_fee: group.platform_fee || 0,
+        discount: group.discount || 0,
+        other_fee: group.other_fee || 0,
+        lines: group.lines,
+      };
+
+      if (group.has_net_amount) {
+        payload.net_amount = group.net_amount;
+      }
+
+      return payload;
+    });
+  }
+
+  async function importSalesExcel() {
+    const file = await pickExcelFile();
+    if (!file) return;
+
+    let groups = [];
+
+    try {
+      loading(true, "Đang đọc file Excel bán hàng...");
+      groups = await readSalesGroupsFromExcel(file);
+    } catch (err) {
+      toast(err?.message || String(err));
+      console.error(err);
+      return;
+    } finally {
+      loading(false);
+    }
+
+    const totalLines = groups.reduce((sum, g) => sum + g.lines.length, 0);
+
+    const okImport = confirm(
+      `Tìm thấy ${groups.length} đơn bán, ${totalLines} dòng sản phẩm.\n\n` +
+      `Bạn có muốn nhập vào D1 và trừ tồn kho không?\n\n` +
+      `Lưu ý: mã sản phẩm phải có sẵn và tồn kho phải đủ.`
+    );
+
+    if (!okImport) return;
+
+    let created = 0;
+    let duplicated = 0;
+    const failed = [];
+
+    loading(true, `Đang nhập 0/${groups.length} đơn...`);
+
+    try {
+      for (let i = 0; i < groups.length; i++) {
+        const group = groups[i];
+
+        const label = $("loadingOverlay")?.querySelector("span");
+        if (label) label.textContent = `Đang nhập ${i + 1}/${groups.length}: ${group.order_code}`;
+
+        try {
+          await api("/api/sales", {
+            method: "POST",
+            body: group,
+          });
+
+          created++;
+        } catch (err) {
+          const msg = err?.message || String(err);
+
+          if (
+            msg.includes("Mã đơn này đã tồn tại") ||
+            msg.includes("DUPLICATE_ORDER_CODE") ||
+            msg.includes("đã tồn tại")
+          ) {
+            duplicated++;
+          } else {
+            failed.push(`${group.order_code}: ${msg}`);
+          }
+        }
+      }
+    } finally {
+      loading(false);
+    }
+
+    await Promise.all([
+      loadSales(false),
+      loadProducts(false),
+      loadStock(false),
+      loadHistory(false),
+      loadDashboard(false),
+      loadReport(false),
+    ]);
+
+    const summary =
+      `Nhập bán hàng Excel hoàn tất.\n\n` +
+      `Đơn đã tạo: ${created}\n` +
+      `Bỏ qua do trùng mã đơn: ${duplicated}\n` +
+      `Lỗi: ${failed.length}`;
+
+    if (failed.length) {
+      alert(summary + "\n\nChi tiết lỗi:\n" + failed.slice(0, 25).join("\n"));
+    } else {
+      alert(summary);
+    }
+  }
+
+
   /* =========================================================
      EVENTS
   ========================================================= */
@@ -2575,6 +2924,7 @@
 
     $("btnImportProductsExcel")?.addEventListener("click", importProductsExcel);
     $("btnImportStockExcel")?.addEventListener("click", importStockExcel);
+    $("btnImportSalesExcel")?.addEventListener("click", importSalesExcel);
   }
 
   function debounce(fn, wait = 250) {
