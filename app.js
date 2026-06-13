@@ -1666,6 +1666,284 @@
     downloadCsv("bao-cao-" + today() + ".csv", rows);
   }
 
+
+  /* =========================================================
+     IMPORT EXCEL - PRODUCTS
+     Đọc sheet 01_SanPham trong file Excel mẫu.
+     Cần internet để tải SheetJS từ CDN khi bấm nút lần đầu.
+  ========================================================= */
+
+  function loadXlsxLibrary() {
+    return new Promise((resolve, reject) => {
+      if (window.XLSX) {
+        resolve(window.XLSX);
+        return;
+      }
+
+      const existed = document.querySelector('script[data-xlsx-loader="1"]');
+      if (existed) {
+        existed.addEventListener("load", () => resolve(window.XLSX));
+        existed.addEventListener("error", () => reject(new Error("Không tải được thư viện đọc Excel.")));
+        return;
+      }
+
+      const script = document.createElement("script");
+      script.src = "https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js";
+      script.async = true;
+      script.dataset.xlsxLoader = "1";
+
+      script.onload = () => {
+        if (window.XLSX) resolve(window.XLSX);
+        else reject(new Error("Thư viện đọc Excel chưa sẵn sàng."));
+      };
+
+      script.onerror = () => {
+        reject(new Error("Không tải được thư viện đọc Excel. Kiểm tra internet hoặc CDN."));
+      };
+
+      document.head.appendChild(script);
+    });
+  }
+
+  function pickExcelFile() {
+    return new Promise((resolve) => {
+      const input = document.createElement("input");
+      input.type = "file";
+      input.accept = ".xlsx,.xls,.csv";
+
+      input.onchange = () => {
+        resolve(input.files?.[0] || null);
+      };
+
+      input.click();
+    });
+  }
+
+  function normalizeHeaderName(value) {
+    return String(value || "")
+      .trim()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/đ/g, "d")
+      .replace(/Đ/g, "D")
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "_")
+      .replace(/^_+|_+$/g, "");
+  }
+
+  function readAnyField(row, names) {
+    const normalized = {};
+
+    Object.keys(row || {}).forEach((key) => {
+      normalized[normalizeHeaderName(key)] = row[key];
+    });
+
+    for (const name of names) {
+      const key = normalizeHeaderName(name);
+      if (normalized[key] !== undefined && normalized[key] !== null) {
+        return normalized[key];
+      }
+    }
+
+    return "";
+  }
+
+  async function readProductsFromExcel(file) {
+    const XLSX = await loadXlsxLibrary();
+    const buffer = await file.arrayBuffer();
+    const workbook = XLSX.read(buffer, { type: "array" });
+
+    const sheetName =
+      workbook.SheetNames.find((name) => normalizeHeaderName(name) === "01_sanpham") ||
+      workbook.SheetNames.find((name) => normalizeHeaderName(name).includes("sanpham")) ||
+      workbook.SheetNames[0];
+
+    if (!sheetName) {
+      throw new Error("File Excel không có sheet dữ liệu.");
+    }
+
+    const sheet = workbook.Sheets[sheetName];
+    const rawRows = XLSX.utils.sheet_to_json(sheet, {
+      defval: "",
+      raw: false,
+    });
+
+    const products = [];
+
+    rawRows.forEach((row, index) => {
+      const code = sku(readAnyField(row, [
+        "sku",
+        "ma_sp",
+        "ma_san_pham",
+        "mã sp",
+        "mã sản phẩm",
+        "ma hang",
+        "mã hàng",
+      ]));
+
+      const name = String(readAnyField(row, [
+        "name",
+        "ten",
+        "ten_san_pham",
+        "tên sản phẩm",
+        "ten hang",
+        "tên hàng",
+      ]) || "").trim();
+
+      const category = String(readAnyField(row, [
+        "category",
+        "nhom",
+        "nhom_hang",
+        "nhóm hàng",
+        "loai",
+        "loại",
+      ]) || "").trim();
+
+      const unit = String(readAnyField(row, [
+        "unit",
+        "dvt",
+        "don_vi",
+        "đơn vị",
+        "don vi tinh",
+        "đơn vị tính",
+      ]) || "Cái").trim() || "Cái";
+
+      const minQty = Math.max(0, Math.round(num(readAnyField(row, [
+        "min_qty",
+        "canh_bao",
+        "ton_canh_bao",
+        "tồn cảnh báo",
+        "muc_canh_bao",
+        "mức cảnh báo",
+      ])) || 0));
+
+      const statusRaw = String(readAnyField(row, [
+        "status",
+        "trang_thai",
+        "trạng thái",
+      ]) || "ACTIVE").trim();
+
+      const note = String(readAnyField(row, [
+        "note",
+        "ghi_chu",
+        "ghi chú",
+      ]) || "").trim();
+
+      if (!code && !name) return;
+
+      if (!code || !name) {
+        throw new Error(`Dòng ${index + 2}: thiếu mã sản phẩm hoặc tên sản phẩm.`);
+      }
+
+      let status = statusRaw.toUpperCase();
+
+      if (["ĐANG BÁN", "DANG BAN", "ACTIVE", "A"].includes(status)) status = "ACTIVE";
+      else if (["TẠM NGƯNG", "TAM NGUNG", "PAUSED", "P"].includes(status)) status = "PAUSED";
+      else if (["ẨN", "AN", "HIDDEN", "H"].includes(status)) status = "HIDDEN";
+      else status = "ACTIVE";
+
+      products.push({
+        sku: code,
+        name,
+        category,
+        unit,
+        min_qty: minQty || Number(state.settings.defaultMinQty || 5),
+        status,
+        note,
+      });
+    });
+
+    return products;
+  }
+
+  async function importProductsExcel() {
+    const file = await pickExcelFile();
+    if (!file) return;
+
+    let products = [];
+
+    try {
+      loading(true, "Đang đọc file Excel...");
+      products = await readProductsFromExcel(file);
+    } catch (err) {
+      toast(err?.message || String(err));
+      console.error(err);
+      return;
+    } finally {
+      loading(false);
+    }
+
+    if (!products.length) {
+      toast("File Excel không có sản phẩm hợp lệ.");
+      return;
+    }
+
+    const okImport = confirm(
+      `Tìm thấy ${products.length} sản phẩm trong file Excel.\n\n` +
+      `Bạn có muốn nhập vào D1 không?\n\n` +
+      `Lưu ý: mã nào đã tồn tại sẽ được bỏ qua.`
+    );
+
+    if (!okImport) return;
+
+    let created = 0;
+    let duplicated = 0;
+    const failed = [];
+
+    loading(true, `Đang nhập 0/${products.length} sản phẩm...`);
+
+    try {
+      for (let i = 0; i < products.length; i++) {
+        const p = products[i];
+
+        const label = $("loadingOverlay")?.querySelector("span");
+        if (label) label.textContent = `Đang nhập ${i + 1}/${products.length}: ${p.sku}`;
+
+        try {
+          await api("/api/products", {
+            method: "POST",
+            body: p,
+          });
+
+          created++;
+        } catch (err) {
+          const msg = err?.message || String(err);
+
+          if (
+            msg.includes("đã tồn tại") ||
+            msg.includes("DUPLICATE_SKU") ||
+            msg.includes("Mã sản phẩm")
+          ) {
+            duplicated++;
+          } else {
+            failed.push(`${p.sku}: ${msg}`);
+          }
+        }
+      }
+    } finally {
+      loading(false);
+    }
+
+    await Promise.all([
+      loadProducts(false),
+      loadStock(false),
+      loadDashboard(false),
+    ]);
+
+    const summary =
+      `Nhập Excel hoàn tất.\n\n` +
+      `Thêm mới: ${created}\n` +
+      `Bỏ qua do trùng mã: ${duplicated}\n` +
+      `Lỗi: ${failed.length}`;
+
+    if (failed.length) {
+      alert(summary + "\n\nChi tiết lỗi:\n" + failed.slice(0, 20).join("\n"));
+    } else {
+      alert(summary);
+    }
+  }
+
+
   /* =========================================================
      EVENTS
   ========================================================= */
@@ -1868,9 +2146,7 @@
     $("btnExportImportsExcel")?.addEventListener("click", exportImports);
     $("btnExportReportExcel")?.addEventListener("click", exportReport);
 
-    $("btnImportProductsExcel")?.addEventListener("click", () => {
-      alert("Nhập Excel sản phẩm sẽ làm ở bước sau. Bản hiện tại đã chạy D1 thật.");
-    });
+    $("btnImportProductsExcel")?.addEventListener("click", importProductsExcel);
   }
 
   function debounce(fn, wait = 250) {
