@@ -1,0 +1,1078 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>Quản lý bán hàng TMĐT</title>
+
+  <link rel="stylesheet" href="style.css" />
+
+  <meta name="theme-color" content="#0f766e" />
+  <meta name="description" content="Ứng dụng quản lý nhập hàng, bán hàng, tồn kho và lợi nhuận TMĐT" />
+</head>
+
+<body>
+  <!-- LOGIN SCREEN -->
+  <div id="loginScreen" class="login-screen">
+    <div class="login-card">
+      <div class="login-logo">
+        <div class="logo-mark">VH</div>
+
+        <div>
+          <h1>Quản lý bán hàng TMĐT</h1>
+          <p>Nhập hàng · Bán hàng · Tồn kho · Lợi nhuận</p>
+        </div>
+      </div>
+
+      <div class="login-form">
+        <label>
+          Tài khoản
+          <input
+            id="loginUsername"
+            type="text"
+            placeholder="Nhập tài khoản"
+            autocomplete="username"
+          />
+        </label>
+
+        <label>
+          Mật khẩu
+          <input
+            id="loginPassword"
+            type="password"
+            placeholder="Nhập mật khẩu"
+            autocomplete="current-password"
+          />
+        </label>
+
+        <button id="btnLogin" class="btn primary full" type="button">
+          Đăng nhập
+        </button>
+
+        <p id="loginError" class="login-error hidden">
+          Sai tài khoản hoặc mật khẩu
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <!-- APP -->
+  <div id="app" class="app hidden">
+    <!-- SIDEBAR -->
+    <aside id="sidebar" class="sidebar">
+      <div class="brand">
+        <div class="brand-mark">VH</div>
+
+        <div class="brand-text">
+          <strong>Bán hàng TMĐT</strong>
+          <span>Cloudflare D1</span>
+        </div>
+      </div>
+
+      <nav class="side-menu">
+        <button class="menu-item active" type="button" data-view="dashboardView">
+          <span>📊</span>
+          Tổng quan
+        </button>
+
+        <button class="menu-item" type="button" data-view="productsView">
+          <span>📦</span>
+          Sản phẩm
+        </button>
+
+        <button class="menu-item" type="button" data-view="importsView">
+          <span>⬇️</span>
+          Nhập hàng
+        </button>
+
+        <button class="menu-item" type="button" data-view="salesView">
+          <span>🛒</span>
+          Bán hàng
+        </button>
+
+        <button class="menu-item" type="button" data-view="stockView">
+          <span>🏷️</span>
+          Tồn kho
+        </button>
+
+        <button class="menu-item" type="button" data-view="reportsView">
+          <span>📈</span>
+          Báo cáo
+        </button>
+
+        <button class="menu-item" type="button" data-view="historyView">
+          <span>🕘</span>
+          Lịch sử
+        </button>
+
+        <button class="menu-item" type="button" data-view="settingsView">
+          <span>⚙️</span>
+          Cài đặt
+        </button>
+      </nav>
+
+      <div class="sidebar-footer">
+        <div class="small-note">
+          Dữ liệu lưu trên Cloudflare D1
+        </div>
+      </div>
+    </aside>
+
+    <!-- MAIN -->
+    <main class="main">
+      <!-- TOPBAR -->
+      <header class="topbar">
+        <div class="topbar-left">
+          <button id="btnToggleMenu" class="icon-btn mobile-only" type="button">☰</button>
+
+          <div>
+            <h2 id="pageTitle">Tổng quan</h2>
+            <p id="pageSubtitle">Theo dõi nhanh tình hình bán hàng và tồn kho</p>
+          </div>
+        </div>
+
+        <div class="topbar-right">
+          <div class="top-user">
+            <span id="currentDate">--/--/----</span>
+            <strong id="currentUser">Admin</strong>
+          </div>
+
+          <button id="btnLogout" class="btn ghost" type="button">
+            Đăng xuất
+          </button>
+        </div>
+      </header>
+
+      <!-- CONTENT -->
+      <section class="content">
+        <!-- DASHBOARD -->
+        <div id="dashboardView" class="view active">
+          <div class="quick-actions">
+            <button id="btnQuickAddProduct" class="btn primary" type="button">+ Thêm sản phẩm</button>
+            <button id="btnQuickImport" class="btn success" type="button">+ Nhập hàng</button>
+            <button id="btnQuickSale" class="btn warning" type="button">+ Bán hàng</button>
+            <button id="btnQuickExportReport" class="btn light" type="button">Xuất báo cáo</button>
+          </div>
+
+          <div class="stat-grid">
+            <div class="stat-card">
+              <span class="stat-label">Tổng sản phẩm</span>
+              <strong id="statProducts">0</strong>
+              <small>Mã hàng đang quản lý</small>
+            </div>
+
+            <div class="stat-card">
+              <span class="stat-label">Tổng tồn kho</span>
+              <strong id="statStockQty">0</strong>
+              <small>Số lượng hàng còn lại</small>
+            </div>
+
+            <div class="stat-card">
+              <span class="stat-label">Giá trị tồn</span>
+              <strong id="statStockValue">0</strong>
+              <small>Theo giá vốn trung bình</small>
+            </div>
+
+            <div class="stat-card profit">
+              <span class="stat-label">Lợi nhuận tháng này</span>
+              <strong id="statMonthlyProfit">0</strong>
+              <small>Sau khi trừ giá vốn</small>
+            </div>
+          </div>
+
+          <div class="dashboard-grid">
+            <div class="panel">
+              <div class="panel-head">
+                <div>
+                  <h3>Hàng sắp hết</h3>
+                  <p>Các sản phẩm có tồn thấp hơn mức cảnh báo</p>
+                </div>
+
+                <button class="btn tiny" type="button" data-view="stockView">
+                  Xem tất cả
+                </button>
+              </div>
+
+              <div class="table-wrap">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th>Mã SP</th>
+                      <th>Tên hàng</th>
+                      <th>Tồn</th>
+                      <th>Cảnh báo</th>
+                      <th>Trạng thái</th>
+                    </tr>
+                  </thead>
+
+                  <tbody id="lowStockBody">
+                    <tr>
+                      <td colspan="5">Đang tải dữ liệu...</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div class="panel">
+              <div class="panel-head">
+                <div>
+                  <h3>Bán hàng gần đây</h3>
+                  <p>Các đơn vừa nhập vào hệ thống</p>
+                </div>
+
+                <button class="btn tiny" type="button" data-view="salesView">
+                  Chi tiết
+                </button>
+              </div>
+
+              <div id="recentSalesList" class="activity-list">
+                <div class="activity-item">
+                  <div>
+                    <strong>Đang tải dữ liệu...</strong>
+                    <p>Vui lòng chờ trong giây lát</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- PRODUCTS -->
+        <div id="productsView" class="view">
+          <div class="section-head">
+            <div>
+              <h3>Danh sách sản phẩm</h3>
+              <p>Quản lý mã sản phẩm, giá vốn, tồn kho và cảnh báo sắp hết</p>
+            </div>
+
+            <div class="section-actions">
+              <button id="btnOpenProductModal" class="btn primary" type="button">+ Thêm sản phẩm</button>
+              <button id="btnImportProductsExcel" class="btn light" type="button">Nhập Excel</button>
+              <button id="btnExportProductsExcel" class="btn light" type="button">Xuất Excel</button>
+            </div>
+          </div>
+
+          <div class="filter-bar">
+            <div class="search-box">
+              <input id="productSearch" type="search" placeholder="Tìm mã sản phẩm, tên hàng..." />
+            </div>
+
+            <select id="categoryFilter">
+              <option value="">Tất cả nhóm hàng</option>
+              <option value="Áo">Áo</option>
+              <option value="Quần">Quần</option>
+              <option value="Phụ kiện">Phụ kiện</option>
+              <option value="Gia dụng">Gia dụng</option>
+              <option value="Khác">Khác</option>
+            </select>
+
+            <select id="stockStatusFilter">
+              <option value="">Tất cả tồn kho</option>
+              <option value="inStock">Còn hàng</option>
+              <option value="lowStock">Sắp hết</option>
+              <option value="outStock">Hết hàng</option>
+            </select>
+          </div>
+
+          <div class="panel">
+            <div class="table-wrap">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>STT</th>
+                    <th>Mã SP</th>
+                    <th>Tên sản phẩm</th>
+                    <th>Nhóm</th>
+                    <th>ĐVT</th>
+                    <th>Tồn</th>
+                    <th>Giá vốn TB</th>
+                    <th>Giá trị tồn</th>
+                    <th>Cảnh báo</th>
+                    <th>Trạng thái</th>
+                    <th>Thao tác</th>
+                  </tr>
+                </thead>
+
+                <tbody id="productsTableBody">
+                  <tr>
+                    <td colspan="11">Đang tải dữ liệu...</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <div class="pagination">
+              <button id="btnProductPrev" class="btn light" type="button">Trước</button>
+              <span id="productPageInfo">Trang 1 / 1</span>
+              <button id="btnProductNext" class="btn light" type="button">Sau</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- IMPORTS -->
+        <div id="importsView" class="view">
+          <div class="section-head">
+            <div>
+              <h3>Nhập hàng</h3>
+              <p>Tạo phiếu nhập, cộng tồn kho và cập nhật giá vốn trung bình</p>
+            </div>
+
+            <div class="section-actions">
+              <button id="btnOpenImportModal" class="btn success" type="button">+ Tạo phiếu nhập</button>
+              <button id="btnExportImportsExcel" class="btn light" type="button">Xuất Excel</button>
+            </div>
+          </div>
+
+          <div class="filter-bar">
+            <input id="importSearch" type="search" placeholder="Tìm mã phiếu, mã sản phẩm, nhà cung cấp..." />
+            <input id="importFromDate" type="date" />
+            <input id="importToDate" type="date" />
+            <button id="btnFilterImports" class="btn light" type="button">Lọc</button>
+          </div>
+
+          <div class="panel">
+            <div class="table-wrap">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Ngày nhập</th>
+                    <th>Mã phiếu</th>
+                    <th>Nhà cung cấp</th>
+                    <th>Số dòng</th>
+                    <th>Tổng SL</th>
+                    <th>Tổng tiền</th>
+                    <th>Người nhập</th>
+                    <th>Ghi chú</th>
+                    <th>Thao tác</th>
+                  </tr>
+                </thead>
+
+                <tbody id="importsTableBody">
+                  <tr>
+                    <td colspan="9">Đang tải dữ liệu...</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- SALES -->
+        <div id="salesView" class="view">
+          <div class="section-head">
+            <div>
+              <h3>Bán hàng</h3>
+              <p>Nhập đơn bán từ Shopee, Lazada, TikTok Shop hoặc kênh khác</p>
+            </div>
+
+            <div class="section-actions">
+              <button id="btnOpenSaleModal" class="btn warning" type="button">+ Nhập đơn bán</button>
+              <button id="btnExportSalesExcel" class="btn light" type="button">Xuất Excel</button>
+            </div>
+          </div>
+
+          <div class="filter-bar">
+            <input id="saleSearch" type="search" placeholder="Tìm mã đơn, mã sản phẩm..." />
+
+            <select id="platformFilter">
+              <option value="">Tất cả sàn</option>
+              <option value="Shopee">Shopee</option>
+              <option value="TikTok Shop">TikTok Shop</option>
+              <option value="Lazada">Lazada</option>
+              <option value="Facebook">Facebook</option>
+              <option value="Khác">Khác</option>
+            </select>
+
+            <input id="saleFromDate" type="date" />
+            <input id="saleToDate" type="date" />
+            <button id="btnFilterSales" class="btn light" type="button">Lọc</button>
+          </div>
+
+          <div class="panel">
+            <div class="table-wrap">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Ngày bán</th>
+                    <th>Sàn</th>
+                    <th>Mã đơn</th>
+                    <th>Doanh thu</th>
+                    <th>Phí/Giảm giá</th>
+                    <th>Thực nhận</th>
+                    <th>Giá vốn</th>
+                    <th>Lợi nhuận</th>
+                    <th>Người nhập</th>
+                    <th>Thao tác</th>
+                  </tr>
+                </thead>
+
+                <tbody id="salesTableBody">
+                  <tr>
+                    <td colspan="10">Đang tải dữ liệu...</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- STOCK -->
+        <div id="stockView" class="view">
+          <div class="section-head">
+            <div>
+              <h3>Tồn kho</h3>
+              <p>Xem nhanh số lượng còn lại, giá vốn và giá trị tồn</p>
+            </div>
+
+            <div class="section-actions">
+              <button id="btnStockAdjust" class="btn light" type="button">Điều chỉnh tồn</button>
+              <button id="btnExportStockExcel" class="btn light" type="button">Xuất tồn kho</button>
+            </div>
+          </div>
+
+          <div class="stock-summary">
+            <div class="mini-card">
+              <span>Còn hàng</span>
+              <strong id="stockInCount">0</strong>
+            </div>
+
+            <div class="mini-card">
+              <span>Sắp hết</span>
+              <strong id="stockLowCount">0</strong>
+            </div>
+
+            <div class="mini-card">
+              <span>Hết hàng</span>
+              <strong id="stockOutCount">0</strong>
+            </div>
+
+            <div class="mini-card">
+              <span>Giá trị tồn</span>
+              <strong id="stockTotalValue">0</strong>
+            </div>
+          </div>
+
+          <div class="filter-bar">
+            <input id="stockSearch" type="search" placeholder="Tìm mã sản phẩm, tên hàng..." />
+
+            <select id="stockViewFilter">
+              <option value="">Tất cả</option>
+              <option value="inStock">Còn hàng</option>
+              <option value="lowStock">Sắp hết</option>
+              <option value="outStock">Hết hàng</option>
+            </select>
+          </div>
+
+          <div class="panel">
+            <div class="table-wrap">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Mã SP</th>
+                    <th>Tên hàng</th>
+                    <th>Tồn hiện tại</th>
+                    <th>Giá vốn TB</th>
+                    <th>Giá trị tồn</th>
+                    <th>Mức cảnh báo</th>
+                    <th>Tình trạng</th>
+                  </tr>
+                </thead>
+
+                <tbody id="stockTableBody">
+                  <tr>
+                    <td colspan="7">Đang tải dữ liệu...</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- REPORTS -->
+        <div id="reportsView" class="view">
+          <div class="section-head">
+            <div>
+              <h3>Báo cáo</h3>
+              <p>Xem doanh thu, giá vốn, lợi nhuận theo ngày, tháng, sàn và sản phẩm</p>
+            </div>
+
+            <div class="section-actions">
+              <button id="btnExportReportExcel" class="btn primary" type="button">Xuất Excel</button>
+            </div>
+          </div>
+
+          <div class="report-filter">
+            <label>
+              Từ ngày
+              <input id="reportFromDate" type="date" />
+            </label>
+
+            <label>
+              Đến ngày
+              <input id="reportToDate" type="date" />
+            </label>
+
+            <label>
+              Sàn
+              <select id="reportPlatform">
+                <option value="">Tất cả</option>
+                <option value="Shopee">Shopee</option>
+                <option value="TikTok Shop">TikTok Shop</option>
+                <option value="Lazada">Lazada</option>
+                <option value="Facebook">Facebook</option>
+                <option value="Khác">Khác</option>
+              </select>
+            </label>
+
+            <button id="btnRunReport" class="btn primary" type="button">Xem báo cáo</button>
+          </div>
+
+          <div class="stat-grid">
+            <div class="stat-card">
+              <span class="stat-label">Doanh thu</span>
+              <strong id="reportRevenue">0</strong>
+              <small>Tổng tiền bán</small>
+            </div>
+
+            <div class="stat-card">
+              <span class="stat-label">Thực nhận</span>
+              <strong id="reportNet">0</strong>
+              <small>Sau phí sàn/voucher</small>
+            </div>
+
+            <div class="stat-card">
+              <span class="stat-label">Giá vốn</span>
+              <strong id="reportCost">0</strong>
+              <small>Tổng giá gốc</small>
+            </div>
+
+            <div class="stat-card profit">
+              <span class="stat-label">Lợi nhuận</span>
+              <strong id="reportProfit">0</strong>
+              <small>Thực nhận - giá vốn</small>
+            </div>
+          </div>
+
+          <div class="dashboard-grid">
+            <div class="panel">
+              <div class="panel-head">
+                <h3>Lợi nhuận theo sàn</h3>
+              </div>
+
+              <div class="table-wrap">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th>Sàn</th>
+                      <th>Số đơn</th>
+                      <th>Thực nhận</th>
+                      <th>Giá vốn</th>
+                      <th>Lợi nhuận</th>
+                    </tr>
+                  </thead>
+
+                  <tbody id="platformReportBody">
+                    <tr>
+                      <td colspan="5">Đang tải dữ liệu...</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div class="panel">
+              <div class="panel-head">
+                <h3>Sản phẩm bán chạy</h3>
+              </div>
+
+              <div class="table-wrap">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th>Mã SP</th>
+                      <th>Tên hàng</th>
+                      <th>SL bán</th>
+                      <th>Lợi nhuận</th>
+                    </tr>
+                  </thead>
+
+                  <tbody id="topProductReportBody">
+                    <tr>
+                      <td colspan="4">Đang tải dữ liệu...</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- HISTORY -->
+        <div id="historyView" class="view">
+          <div class="section-head">
+            <div>
+              <h3>Lịch sử kho</h3>
+              <p>Theo dõi toàn bộ nhập, bán, điều chỉnh và thay đổi tồn kho</p>
+            </div>
+
+            <div class="section-actions">
+              <button id="btnExportHistoryExcel" class="btn light" type="button">Xuất lịch sử</button>
+            </div>
+          </div>
+
+          <div class="filter-bar">
+            <input id="historySearch" type="search" placeholder="Tìm mã sản phẩm, ghi chú, người thao tác..." />
+
+            <select id="historyTypeFilter">
+              <option value="">Tất cả loại</option>
+              <option value="IMPORT">Nhập hàng</option>
+              <option value="SALE">Bán hàng</option>
+              <option value="ADJUST">Điều chỉnh</option>
+              <option value="RETURN">Trả hàng</option>
+            </select>
+
+            <input id="historyFromDate" type="date" />
+            <input id="historyToDate" type="date" />
+          </div>
+
+          <div class="panel">
+            <div class="table-wrap">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Thời gian</th>
+                    <th>Mã SP</th>
+                    <th>Loại</th>
+                    <th>Thay đổi</th>
+                    <th>Trước</th>
+                    <th>Sau</th>
+                    <th>Tham chiếu</th>
+                    <th>Người thao tác</th>
+                    <th>Ghi chú</th>
+                  </tr>
+                </thead>
+
+                <tbody id="historyTableBody">
+                  <tr>
+                    <td colspan="9">Đang tải dữ liệu...</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- SETTINGS -->
+        <div id="settingsView" class="view">
+          <div class="section-head">
+            <div>
+              <h3>Cài đặt</h3>
+              <p>Thiết lập thông tin cửa hàng, sàn bán hàng và cảnh báo tồn kho</p>
+            </div>
+          </div>
+
+          <div class="settings-grid">
+            <div class="panel">
+              <div class="panel-head">
+                <h3>Thông tin chung</h3>
+              </div>
+
+              <div class="form-grid">
+                <label>
+                  Tên cửa hàng
+                  <input id="settingStoreName" type="text" value="Cửa hàng của tôi" />
+                </label>
+
+                <label>
+                  Tiền tệ
+                  <select id="settingCurrency">
+                    <option value="VND">VND</option>
+                  </select>
+                </label>
+
+                <label>
+                  Cách tính giá vốn
+                  <select id="settingCostMethod">
+                    <option value="AVG">Bình quân giá nhập</option>
+                    <option value="FIFO" disabled>FIFO - nâng cấp sau</option>
+                  </select>
+                </label>
+
+                <label>
+                  Cảnh báo tồn mặc định
+                  <input id="settingDefaultMinQty" type="number" value="5" min="0" />
+                </label>
+              </div>
+
+              <div class="form-actions">
+                <button id="btnSaveSettings" class="btn primary" type="button">Lưu cài đặt</button>
+              </div>
+            </div>
+
+            <div class="panel">
+              <div class="panel-head">
+                <h3>Sàn bán hàng</h3>
+              </div>
+
+              <div class="platform-list">
+                <label class="check-row">
+                  <input type="checkbox" checked disabled />
+                  Shopee
+                </label>
+
+                <label class="check-row">
+                  <input type="checkbox" checked disabled />
+                  TikTok Shop
+                </label>
+
+                <label class="check-row">
+                  <input type="checkbox" checked disabled />
+                  Lazada
+                </label>
+
+                <label class="check-row">
+                  <input type="checkbox" checked disabled />
+                  Facebook
+                </label>
+
+                <label class="check-row">
+                  <input type="checkbox" checked disabled />
+                  Khác
+                </label>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- PRODUCT MODAL -->
+  <div id="productModal" class="modal hidden">
+    <div class="modal-backdrop" data-close-modal="productModal"></div>
+
+    <div class="modal-card large">
+      <div class="modal-head">
+        <div>
+          <h3 id="productModalTitle">Thêm sản phẩm</h3>
+          <p>Tạo mã sản phẩm để nhập hàng và bán hàng</p>
+        </div>
+
+        <button class="icon-btn" type="button" data-close-modal="productModal">×</button>
+      </div>
+
+      <div class="modal-body">
+        <div class="form-grid">
+          <label>
+            Mã sản phẩm / SKU <span class="required">*</span>
+            <input id="p_sku" type="text" placeholder="VD: AO-0001-DEN-M" />
+          </label>
+
+          <label>
+            Tên sản phẩm <span class="required">*</span>
+            <input id="p_name" type="text" placeholder="VD: Áo thun đen size M" />
+          </label>
+
+          <label>
+            Nhóm hàng
+            <input id="p_category" type="text" placeholder="VD: Áo, Phụ kiện, Gia dụng..." />
+          </label>
+
+          <label>
+            Đơn vị tính
+            <input id="p_unit" type="text" value="Cái" />
+          </label>
+
+          <label>
+            Tồn cảnh báo
+            <input id="p_min_qty" type="number" min="0" value="5" />
+          </label>
+
+          <label>
+            Trạng thái
+            <select id="p_status">
+              <option value="ACTIVE">Đang bán</option>
+              <option value="PAUSED">Tạm ngưng</option>
+              <option value="HIDDEN">Ẩn</option>
+            </select>
+          </label>
+        </div>
+
+        <label class="full-row">
+          Ghi chú
+          <textarea id="p_note" rows="3" placeholder="Ghi chú thêm về sản phẩm..."></textarea>
+        </label>
+
+        <div id="productDuplicateWarning" class="alert warning hidden">
+          Mã sản phẩm này đã tồn tại. Vui lòng kiểm tra lại.
+        </div>
+      </div>
+
+      <div class="modal-actions">
+        <button class="btn light" type="button" data-close-modal="productModal">Hủy</button>
+        <button id="btnSaveProduct" class="btn primary" type="button">Lưu sản phẩm</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- IMPORT MODAL -->
+  <div id="importModal" class="modal hidden">
+    <div class="modal-backdrop" data-close-modal="importModal"></div>
+
+    <div class="modal-card xlarge">
+      <div class="modal-head">
+        <div>
+          <h3>Tạo phiếu nhập hàng</h3>
+          <p>Nhập nhiều sản phẩm trong một phiếu</p>
+        </div>
+
+        <button class="icon-btn" type="button" data-close-modal="importModal">×</button>
+      </div>
+
+      <div class="modal-body">
+        <div class="form-grid">
+          <label>
+            Ngày nhập
+            <input id="i_date" type="date" />
+          </label>
+
+          <label>
+            Nhà cung cấp
+            <input id="i_supplier" type="text" placeholder="Nhập tên nhà cung cấp" />
+          </label>
+
+          <label>
+            Mã phiếu
+            <input id="i_code" type="text" placeholder="Tự sinh nếu bỏ trống" />
+          </label>
+
+          <label>
+            Ghi chú
+            <input id="i_note" type="text" placeholder="Ghi chú phiếu nhập" />
+          </label>
+        </div>
+
+        <div class="sub-section-head">
+          <h4>Danh sách hàng nhập</h4>
+          <button id="btnAddImportLine" class="btn tiny" type="button">+ Thêm dòng</button>
+        </div>
+
+        <div class="table-wrap input-table-wrap">
+          <table class="data-table input-table">
+            <thead>
+              <tr>
+                <th>Mã SP</th>
+                <th>Tên hàng</th>
+                <th>SL nhập</th>
+                <th>Giá nhập</th>
+                <th>Thành tiền</th>
+                <th></th>
+              </tr>
+            </thead>
+
+            <tbody id="importLinesBody"></tbody>
+          </table>
+        </div>
+
+        <div class="total-box">
+          <span>Tổng tiền nhập</span>
+          <strong id="importTotalAmount">0</strong>
+        </div>
+      </div>
+
+      <div class="modal-actions">
+        <button class="btn light" type="button" data-close-modal="importModal">Hủy</button>
+        <button id="btnSaveImport" class="btn success" type="button">Lưu phiếu nhập</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- SALE MODAL -->
+  <div id="saleModal" class="modal hidden">
+    <div class="modal-backdrop" data-close-modal="saleModal"></div>
+
+    <div class="modal-card xlarge">
+      <div class="modal-head">
+        <div>
+          <h3>Nhập đơn bán hàng</h3>
+          <p>Trừ tồn kho, lưu giá vốn và tính lợi nhuận</p>
+        </div>
+
+        <button class="icon-btn" type="button" data-close-modal="saleModal">×</button>
+      </div>
+
+      <div class="modal-body">
+        <div class="form-grid">
+          <label>
+            Ngày bán
+            <input id="s_date" type="date" />
+          </label>
+
+          <label>
+            Sàn bán hàng
+            <select id="s_platform">
+              <option value="Shopee">Shopee</option>
+              <option value="TikTok Shop">TikTok Shop</option>
+              <option value="Lazada">Lazada</option>
+              <option value="Facebook">Facebook</option>
+              <option value="Khác">Khác</option>
+            </select>
+          </label>
+
+          <label>
+            Mã đơn <span class="required">*</span>
+            <input id="s_order_code" type="text" placeholder="VD: SPX123456" />
+          </label>
+
+          <label>
+            Ghi chú
+            <input id="s_note" type="text" placeholder="Ghi chú đơn hàng" />
+          </label>
+        </div>
+
+        <div id="saleDuplicateWarning" class="alert warning hidden">
+          Mã đơn này đã tồn tại. Vui lòng kiểm tra lại để tránh trừ kho 2 lần.
+        </div>
+
+        <div class="sub-section-head">
+          <h4>Danh sách sản phẩm bán</h4>
+          <button id="btnAddSaleLine" class="btn tiny" type="button">+ Thêm dòng</button>
+        </div>
+
+        <div class="table-wrap input-table-wrap">
+          <table class="data-table input-table">
+            <thead>
+              <tr>
+                <th>Mã SP</th>
+                <th>Tên hàng</th>
+                <th>Tồn</th>
+                <th>SL bán</th>
+                <th>Giá bán</th>
+                <th>Giá vốn</th>
+                <th>Lời dòng</th>
+                <th></th>
+              </tr>
+            </thead>
+
+            <tbody id="saleLinesBody"></tbody>
+          </table>
+        </div>
+
+        <div class="sale-money-grid">
+          <label>
+            Doanh thu trước phí
+            <input id="s_gross_amount" type="number" min="0" value="0" readonly />
+          </label>
+
+          <label>
+            Phí sàn
+            <input id="s_platform_fee" type="number" min="0" value="0" />
+          </label>
+
+          <label>
+            Giảm giá / voucher
+            <input id="s_discount" type="number" min="0" value="0" />
+          </label>
+
+          <label>
+            Phí khác
+            <input id="s_other_fee" type="number" min="0" value="0" />
+          </label>
+
+          <label>
+            Tiền thực nhận
+            <input id="s_net_amount" type="number" min="0" value="0" />
+          </label>
+        </div>
+
+        <div class="total-row">
+          <div class="total-box">
+            <span>Tổng giá vốn</span>
+            <strong id="saleCostAmount">0</strong>
+          </div>
+
+          <div class="total-box profit">
+            <span>Lợi nhuận dự kiến</span>
+            <strong id="saleProfitAmount">0</strong>
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-actions">
+        <button class="btn light" type="button" data-close-modal="saleModal">Hủy</button>
+        <button id="btnSaveSale" class="btn warning" type="button">Lưu đơn bán</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- STOCK ADJUST MODAL -->
+  <div id="stockAdjustModal" class="modal hidden">
+    <div class="modal-backdrop" data-close-modal="stockAdjustModal"></div>
+
+    <div class="modal-card">
+      <div class="modal-head">
+        <div>
+          <h3>Điều chỉnh tồn kho</h3>
+          <p>Dùng khi kiểm kho lệch, hàng lỗi, hàng mất hoặc cần chỉnh thủ công</p>
+        </div>
+
+        <button class="icon-btn" type="button" data-close-modal="stockAdjustModal">×</button>
+      </div>
+
+      <div class="modal-body">
+        <div class="form-grid single">
+          <label>
+            Mã sản phẩm
+            <input id="a_sku" type="text" placeholder="Nhập mã sản phẩm" />
+          </label>
+
+          <label>
+            Tồn hiện tại
+            <input id="a_current_qty" type="text" disabled />
+          </label>
+
+          <label>
+            Loại điều chỉnh
+            <select id="a_type">
+              <option value="PLUS">Cộng thêm</option>
+              <option value="MINUS">Trừ bớt</option>
+              <option value="SET">Đặt lại số tồn</option>
+            </select>
+          </label>
+
+          <label>
+            Số lượng
+            <input id="a_qty" type="number" min="0" value="0" />
+          </label>
+
+          <label>
+            Lý do
+            <textarea id="a_note" rows="3" placeholder="VD: Kiểm kho thiếu 1 cái, hàng lỗi, hàng mất..."></textarea>
+          </label>
+        </div>
+      </div>
+
+      <div class="modal-actions">
+        <button class="btn light" type="button" data-close-modal="stockAdjustModal">Hủy</button>
+        <button id="btnSaveStockAdjust" class="btn primary" type="button">Lưu điều chỉnh</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- TOAST -->
+  <div id="toast" class="toast hidden">
+    <span id="toastMessage">Đã lưu dữ liệu</span>
+  </div>
+
+  <!-- LOADING -->
+  <div id="loadingOverlay" class="loading-overlay hidden">
+    <div class="loading-card">
+      <div class="spinner"></div>
+      <span>Đang xử lý...</span>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
