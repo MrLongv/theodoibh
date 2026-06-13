@@ -2042,6 +2042,335 @@
   }
 
 
+
+  /* =========================================================
+     IMPORT EXCEL - STOCK / NHẬP HÀNG
+     Đọc sheet 02_NhapHang trong file Excel mẫu.
+     Mỗi code phiếu nhập sẽ tạo 1 phiếu nhập riêng trong D1.
+  ========================================================= */
+
+  function normalizeExcelDate(value) {
+    if (value === null || value === undefined || value === "") return today();
+
+    if (value instanceof Date && !Number.isNaN(value.getTime())) {
+      const y = value.getFullYear();
+      const m = String(value.getMonth() + 1).padStart(2, "0");
+      const d = String(value.getDate()).padStart(2, "0");
+      return `${y}-${m}-${d}`;
+    }
+
+    const s = String(value).trim();
+    if (!s) return today();
+
+    let m = s.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})$/);
+    if (m) {
+      return `${m[1]}-${String(m[2]).padStart(2, "0")}-${String(m[3]).padStart(2, "0")}`;
+    }
+
+    m = s.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})$/);
+    if (m) {
+      return `${m[3]}-${String(m[2]).padStart(2, "0")}-${String(m[1]).padStart(2, "0")}`;
+    }
+
+    const n = Number(s);
+    if (Number.isFinite(n) && n > 25000 && n < 90000) {
+      const epoch = new Date(Date.UTC(1899, 11, 30));
+      const d = new Date(epoch.getTime() + n * 86400000);
+      return d.toISOString().slice(0, 10);
+    }
+
+    return s.slice(0, 10);
+  }
+
+  function generateImportCodeFromExcel(date, index) {
+    const cleanDate = normalizeExcelDate(date).replaceAll("-", "");
+    return `PN-${cleanDate}-${String(index).padStart(3, "0")}`;
+  }
+
+  function findHeaderRowIndex(matrix, requiredNames) {
+    for (let i = 0; i < matrix.length; i++) {
+      const row = matrix[i] || [];
+      const normalized = row.map((x) => normalizeHeaderName(x));
+
+      const ok = requiredNames.every((names) => {
+        return names.some((name) => normalized.includes(normalizeHeaderName(name)));
+      });
+
+      if (ok) return i;
+    }
+
+    return -1;
+  }
+
+  function matrixToObjects(matrix, headerIndex) {
+    const headers = (matrix[headerIndex] || []).map((h) => String(h || "").trim());
+    const rows = [];
+
+    for (let i = headerIndex + 1; i < matrix.length; i++) {
+      const line = matrix[i] || [];
+      const obj = {};
+
+      headers.forEach((h, idx) => {
+        if (!h) return;
+        obj[h] = line[idx] ?? "";
+      });
+
+      rows.push(obj);
+    }
+
+    return rows;
+  }
+
+  async function readStockImportGroupsFromExcel(file) {
+    const XLSX = await loadXlsxLibrary();
+    const buffer = await file.arrayBuffer();
+    const workbook = XLSX.read(buffer, {
+      type: "array",
+      cellDates: true,
+    });
+
+    const sheetName =
+      workbook.SheetNames.find((name) => normalizeHeaderName(name) === "02_nhaphang") ||
+      workbook.SheetNames.find((name) => normalizeHeaderName(name).includes("nhaphang")) ||
+      workbook.SheetNames.find((name) => normalizeHeaderName(name).includes("nhap_hang")) ||
+      workbook.SheetNames[1] ||
+      workbook.SheetNames[0];
+
+    if (!sheetName) {
+      throw new Error("File Excel không có sheet nhập hàng.");
+    }
+
+    const sheet = workbook.Sheets[sheetName];
+    const matrix = XLSX.utils.sheet_to_json(sheet, {
+      header: 1,
+      defval: "",
+      raw: false,
+    });
+
+    const headerIndex = findHeaderRowIndex(matrix, [
+      ["code", "ma_phieu", "mã phiếu"],
+      ["date", "ngay", "ngày", "ngay_nhap", "ngày nhập"],
+      ["sku", "ma_sp", "mã sp", "ma_san_pham", "mã sản phẩm"],
+      ["qty", "sl", "so_luong", "số lượng"],
+      ["unit_cost", "gia_nhap", "giá nhập"],
+    ]);
+
+    if (headerIndex < 0) {
+      throw new Error("Không tìm thấy dòng tiêu đề nhập hàng. Cần có cột: code, date, sku, qty, unit_cost.");
+    }
+
+    const rawRows = matrixToObjects(matrix, headerIndex);
+    const validRows = [];
+
+    rawRows.forEach((row, index) => {
+      const codeRaw = String(readAnyField(row, [
+        "code",
+        "ma_phieu",
+        "mã phiếu",
+        "ma phieu",
+        "phieu_nhap",
+        "phiếu nhập",
+      ]) || "").trim();
+
+      const dateRaw = readAnyField(row, [
+        "date",
+        "ngay",
+        "ngày",
+        "ngay_nhap",
+        "ngày nhập",
+      ]);
+
+      const supplier = String(readAnyField(row, [
+        "supplier",
+        "nha_cung_cap",
+        "nhà cung cấp",
+        "ncc",
+      ]) || "").trim();
+
+      const codeSku = sku(readAnyField(row, [
+        "sku",
+        "ma_sp",
+        "mã sp",
+        "ma_san_pham",
+        "mã sản phẩm",
+        "ma_hang",
+        "mã hàng",
+      ]));
+
+      const qty = Math.round(num(readAnyField(row, [
+        "qty",
+        "sl",
+        "so_luong",
+        "số lượng",
+        "so_luong_nhap",
+        "số lượng nhập",
+      ])));
+
+      const unitCost = Math.round(num(readAnyField(row, [
+        "unit_cost",
+        "gia_nhap",
+        "giá nhập",
+        "cost",
+        "don_gia",
+        "đơn giá",
+      ])));
+
+      const note = String(readAnyField(row, [
+        "note",
+        "ghi_chu",
+        "ghi chú",
+      ]) || "").trim();
+
+      if (!codeRaw && !dateRaw && !supplier && !codeSku && !qty && !unitCost && !note) return;
+
+      if (!codeSku) {
+        throw new Error(`Dòng ${headerIndex + index + 2}: thiếu mã sản phẩm.`);
+      }
+
+      if (qty <= 0) {
+        throw new Error(`Dòng ${headerIndex + index + 2}: số lượng nhập của ${codeSku} phải lớn hơn 0.`);
+      }
+
+      if (unitCost < 0) {
+        throw new Error(`Dòng ${headerIndex + index + 2}: giá nhập của ${codeSku} không hợp lệ.`);
+      }
+
+      const date = normalizeExcelDate(dateRaw);
+      const code = codeRaw || generateImportCodeFromExcel(date, validRows.length + 1);
+
+      validRows.push({
+        code,
+        date,
+        supplier,
+        sku: codeSku,
+        qty,
+        unit_cost: unitCost,
+        note,
+      });
+    });
+
+    if (!validRows.length) {
+      throw new Error("Sheet nhập hàng không có dòng nhập hàng hợp lệ.");
+    }
+
+    const groupMap = new Map();
+
+    validRows.forEach((row) => {
+      const key = row.code || generateImportCodeFromExcel(row.date, groupMap.size + 1);
+
+      if (!groupMap.has(key)) {
+        groupMap.set(key, {
+          code: key,
+          date: row.date || today(),
+          supplier: row.supplier || "",
+          note: row.note || "",
+          lines: [],
+        });
+      }
+
+      const group = groupMap.get(key);
+
+      if (!group.supplier && row.supplier) group.supplier = row.supplier;
+      if (!group.note && row.note) group.note = row.note;
+
+      group.lines.push({
+        sku: row.sku,
+        qty: row.qty,
+        unit_cost: row.unit_cost,
+      });
+    });
+
+    return Array.from(groupMap.values());
+  }
+
+  async function importStockExcel() {
+    const file = await pickExcelFile();
+    if (!file) return;
+
+    let groups = [];
+
+    try {
+      loading(true, "Đang đọc file Excel nhập hàng...");
+      groups = await readStockImportGroupsFromExcel(file);
+    } catch (err) {
+      toast(err?.message || String(err));
+      console.error(err);
+      return;
+    } finally {
+      loading(false);
+    }
+
+    const totalLines = groups.reduce((sum, g) => sum + g.lines.length, 0);
+
+    const okImport = confirm(
+      `Tìm thấy ${groups.length} phiếu nhập, ${totalLines} dòng hàng.\n\n` +
+      `Bạn có muốn nhập vào D1 và cộng tồn kho không?\n\n` +
+      `Lưu ý: mã sản phẩm phải có sẵn trong danh sách Sản phẩm.`
+    );
+
+    if (!okImport) return;
+
+    let created = 0;
+    let duplicated = 0;
+    const failed = [];
+
+    loading(true, `Đang nhập 0/${groups.length} phiếu...`);
+
+    try {
+      for (let i = 0; i < groups.length; i++) {
+        const group = groups[i];
+
+        const label = $("loadingOverlay")?.querySelector("span");
+        if (label) label.textContent = `Đang nhập ${i + 1}/${groups.length}: ${group.code}`;
+
+        try {
+          await api("/api/imports", {
+            method: "POST",
+            body: group,
+          });
+
+          created++;
+        } catch (err) {
+          const msg = err?.message || String(err);
+
+          if (
+            msg.includes("Mã phiếu nhập đã tồn tại") ||
+            msg.includes("DUPLICATE_IMPORT_CODE") ||
+            msg.includes("đã tồn tại")
+          ) {
+            duplicated++;
+          } else {
+            failed.push(`${group.code}: ${msg}`);
+          }
+        }
+      }
+    } finally {
+      loading(false);
+    }
+
+    await Promise.all([
+      loadImports(false),
+      loadProducts(false),
+      loadStock(false),
+      loadHistory(false),
+      loadDashboard(false),
+      loadReport(false),
+    ]);
+
+    const summary =
+      `Nhập hàng Excel hoàn tất.\n\n` +
+      `Phiếu nhập đã tạo: ${created}\n` +
+      `Bỏ qua do trùng mã phiếu: ${duplicated}\n` +
+      `Lỗi: ${failed.length}`;
+
+    if (failed.length) {
+      alert(summary + "\n\nChi tiết lỗi:\n" + failed.slice(0, 25).join("\n"));
+    } else {
+      alert(summary);
+    }
+  }
+
+
   /* =========================================================
      EVENTS
   ========================================================= */
@@ -2245,6 +2574,7 @@
     $("btnExportReportExcel")?.addEventListener("click", exportReport);
 
     $("btnImportProductsExcel")?.addEventListener("click", importProductsExcel);
+    $("btnImportStockExcel")?.addEventListener("click", importStockExcel);
   }
 
   function debounce(fn, wait = 250) {
